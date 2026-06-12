@@ -17,9 +17,7 @@ RED = (255, 80, 80)
 GREEN = (80, 255, 120)
 BLUE = (80, 150, 255)
 
-
 font = pygame.font.SysFont("consolas", 20)
-
 
 def get_sky_color(altitude):
     # 0m = blue sky, high altitude = space black
@@ -114,6 +112,7 @@ def draw_hud(rocket):
 
 def draw_ground():
     pygame.draw.rect(screen, BLUE, (0, HEIGHT - 80, WIDTH, 80))
+
 
 rocket = Rocket()
 running = True
