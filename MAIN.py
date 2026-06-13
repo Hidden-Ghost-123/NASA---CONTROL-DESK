@@ -6,7 +6,7 @@ pygame.init()
 
 WIDTH, HEIGHT = 1200, 750
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("NASA Mission Simulator - Hour 5")
+pygame.display.set_caption("NASA Mission Simulator - Hour 6")
 
 clock = pygame.time.Clock()
 
@@ -20,7 +20,7 @@ BLACK = (10, 10, 20)
 
 font_small = pygame.font.SysFont("consolas", 18)
 font_med = pygame.font.SysFont("consolas", 22)
-font_big = pygame.font.SysFont("consolas", 32)
+font_big = pygame.font.SysFont("consolas", 40)
 
 CENTER = (WIDTH // 2, HEIGHT // 2)
 
@@ -65,6 +65,9 @@ class MissionLog:
 
 class Rocket:
     def __init__(self):
+        self.reset()
+
+    def reset(self):
         self.x = WIDTH // 2
         self.base_y = HEIGHT - 100
 
@@ -94,9 +97,8 @@ class Rocket:
 
         if self.fuel_leak:
             self.fuel -= 0.08
-        else:
-            if self.engine:
-                self.fuel -= 0.03
+        elif self.engine:
+            self.fuel -= 0.03
 
         drag = self.velocity * 0.02 * max(0, 1 - self.altitude / 60000)
 
@@ -158,38 +160,135 @@ class Satellite:
         pygame.draw.rect(screen, YELLOW, (x - 4, y - 4, 8, 8))
 
 
-def trigger_event(rocket, log, t):
+class Game:
+    def __init__(self):
+        self.rocket = Rocket()
+        self.log = MissionLog()
+        self.satellites = []
 
-    roll = random.randint(0, 1000)
+        self.mode = "launch"
+        self.t = 0
 
-    if roll == 1:
-        rocket.engine_failure = True
-        log.add(f"{format_time(t)} ENGINE FAILURE")
+        self.win = False
+        self.fail = False
 
-    if roll == 2:
-        rocket.fuel_leak = True
-        log.add(f"{format_time(t)} FUEL LEAK DETECTED")
+        self.log.add("T+00:00 Mission Initiated")
 
-    if roll == 3:
-        rocket.engine_failure = False
-        rocket.fuel_leak = False
-        log.add(f"{format_time(t)} SYSTEMS STABILIZED")
+    def check_win_condition(self):
+        if len(self.satellites) >= 3:
+            self.win = True
+
+    def check_fail_condition(self):
+        if self.rocket.fuel <= 0 and self.mode == "launch" and not self.satellites:
+            self.fail = True
+
+    def trigger_events(self):
+
+        roll = random.randint(0, 1200)
+
+        if roll == 1:
+            self.rocket.engine_failure = True
+            self.log.add(f"{format_time(self.t)} ENGINE FAILURE")
+
+        if roll == 2:
+            self.rocket.fuel_leak = True
+            self.log.add(f"{format_time(self.t)} FUEL LEAK")
+
+        if roll == 3:
+            self.rocket.engine_failure = False
+            self.rocket.fuel_leak = False
+            self.log.add(f"{format_time(self.t)} SYSTEM RECOVERED")
+
+    def update(self):
+
+        if self.win or self.fail:
+            return
+
+        dt = clock.get_time() / 1000
+        self.t += dt
+
+        self.trigger_events()
+
+        if self.mode == "launch":
+            self.rocket.update_launch()
+
+            if self.rocket.altitude > 80000:
+                self.mode = "orbit"
+                self.rocket.enter_orbit()
+                self.log.add(f"{format_time(self.t)} Orbit Achieved")
+
+        else:
+            self.rocket.update_orbit()
+            for s in self.satellites:
+                s.update()
+
+        self.check_win_condition()
+        self.check_fail_condition()
+
+    def draw_ui(self):
+
+        panel = pygame.Rect(20, 20, 420, 360)
+        pygame.draw.rect(screen, GRAY, panel)
+        pygame.draw.rect(screen, GREEN, panel, 2)
+
+        if self.win:
+            msg = font_big.render("MISSION SUCCESS", True, GREEN)
+            screen.blit(msg, (WIDTH//2 - 200, HEIGHT//2 - 40))
+            return
+
+        if self.fail:
+            msg = font_big.render("MISSION FAILED", True, RED)
+            screen.blit(msg, (WIDTH//2 - 180, HEIGHT//2 - 40))
+            return
+
+        stats = [
+            f"MODE: {self.mode.upper()}",
+            f"ALT: {self.rocket.altitude:.0f}",
+            f"VEL: {self.rocket.velocity:.1f}",
+            f"FUEL: {self.rocket.fuel:.1f}%",
+            f"SATS: {len(self.satellites)}",
+            f"ENGINE: {'FAIL' if self.rocket.engine_failure else 'OK'}",
+            f"LEAK: {'YES' if self.rocket.fuel_leak else 'NO'}"
+        ]
+
+        y = 60
+        for s in stats:
+            screen.blit(font_small.render(s, True, WHITE), (30, y))
+            y += 28
+
+    def draw(self):
+
+        if self.mode == "launch":
+            screen.fill(sky_color(self.rocket.altitude))
+            pygame.draw.rect(screen, BLUE, (0, HEIGHT - 80, WIDTH, 80))
+            self.rocket.draw_launch()
+
+        else:
+            screen.fill((5, 5, 15))
+            pygame.draw.circle(screen, BLUE, CENTER, 60)
+
+            self.rocket.draw_orbit()
+
+            for s in self.satellites:
+                s.draw()
+
+        self.draw_ui()
+        self.log.draw()
+
+        hint = font_small.render(
+            "SPACE engine | M orbit mode | D deploy satellite",
+            True,
+            GREEN
+        )
+        screen.blit(hint, (20, HEIGHT - 30))
 
 
-rocket = Rocket()
-log = MissionLog()
-satellites = []
-
-mode = "launch"
-t = 0
-
-log.add("T+00:00 Mission Start")
+game = Game()
 
 running = True
-while running:
 
-    dt = clock.tick(60) / 1000
-    t += dt
+while running:
+    clock.tick(60)
 
     for e in pygame.event.get():
         if e.type == pygame.QUIT:
@@ -198,77 +297,17 @@ while running:
         if e.type == pygame.KEYDOWN:
 
             if e.key == pygame.K_SPACE:
-                rocket.engine = not rocket.engine
-                log.add(f"{format_time(t)} Engine Toggle")
+                game.rocket.engine = not game.rocket.engine
 
-            if e.key == pygame.K_m:
-                if rocket.altitude > 80000:
-                    mode = "orbit"
-                    rocket.enter_orbit()
-                    log.add(f"{format_time(t)} Orbit Mode")
+            if e.key == pygame.K_m and game.rocket.altitude > 80000:
+                game.mode = "orbit"
+                game.rocket.enter_orbit()
 
-            if e.key == pygame.K_d and mode == "orbit":
-                satellites.append(Satellite())
-                log.add(f"{format_time(t)} Satellite Deployed")
+            if e.key == pygame.K_d and game.mode == "orbit":
+                game.satellites.append(Satellite())
 
-    trigger_event(rocket, log, t)
-
-    if mode == "launch":
-
-        rocket.update_launch()
-
-        screen.fill(sky_color(rocket.altitude))
-        pygame.draw.rect(screen, BLUE, (0, HEIGHT - 80, WIDTH, 80))
-        rocket.draw_launch()
-
-        panel = pygame.Rect(20, 20, 420, 360)
-        pygame.draw.rect(screen, GRAY, panel)
-        pygame.draw.rect(screen, GREEN, panel, 2)
-
-        stats = [
-            f"MODE: LAUNCH",
-            f"ALT: {rocket.altitude:.0f}",
-            f"VEL: {rocket.velocity:.1f}",
-            f"FUEL: {rocket.fuel:.1f}%",
-            f"ENGINE: {'FAIL' if rocket.engine_failure else 'OK'}",
-            f"LEAK: {'YES' if rocket.fuel_leak else 'NO'}"
-        ]
-
-        y = 60
-        for s in stats:
-            screen.blit(font_small.render(s, True, WHITE), (30, y))
-            y += 28
-
-    else:
-
-        screen.fill((5, 5, 15))
-
-        pygame.draw.circle(screen, BLUE, CENTER, 60)
-
-        rocket.update_orbit()
-        rocket.draw_orbit()
-
-        for s in satellites:
-            s.update()
-            s.draw()
-
-        panel = pygame.Rect(20, 20, 420, 360)
-        pygame.draw.rect(screen, GRAY, panel)
-        pygame.draw.rect(screen, GREEN, panel, 2)
-
-        stats = [
-            f"MODE: ORBIT",
-            f"SATELLITES: {len(satellites)}",
-            f"ENGINE STATUS: {'FAIL' if rocket.engine_failure else 'OK'}",
-            f"FUEL STATUS: {'LEAK' if rocket.fuel_leak else 'STABLE'}"
-        ]
-
-        y = 60
-        for s in stats:
-            screen.blit(font_small.render(s, True, WHITE), (30, y))
-            y += 28
-
-    log.draw()
+    game.update()
+    game.draw()
 
     pygame.display.flip()
 
