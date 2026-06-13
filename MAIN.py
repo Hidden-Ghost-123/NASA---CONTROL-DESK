@@ -6,7 +6,7 @@ pygame.init()
 
 WIDTH, HEIGHT = 1200, 750
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("NASA Mission Simulator - Hour 4")
+pygame.display.set_caption("NASA Mission Simulator - Hour 5")
 
 clock = pygame.time.Clock()
 
@@ -82,11 +82,21 @@ class Rocket:
         self.orbit_radius = 180
         self.in_orbit = False
 
+        self.engine_failure = False
+        self.fuel_leak = False
+
     def update_launch(self):
+
         thrust = 0
-        if self.engine and self.fuel > 0:
+
+        if self.engine and self.fuel > 0 and not self.engine_failure:
             thrust = self.thrust
-            self.fuel -= 0.03
+
+        if self.fuel_leak:
+            self.fuel -= 0.08
+        else:
+            if self.engine:
+                self.fuel -= 0.03
 
         drag = self.velocity * 0.02 * max(0, 1 - self.altitude / 60000)
 
@@ -112,7 +122,7 @@ class Rocket:
             (self.x, y - 65)
         ])
 
-        if self.engine and self.fuel > 0:
+        if self.engine and self.fuel > 0 and not self.engine_failure:
             flame = 20 + math.sin(pygame.time.get_ticks() * 0.02) * 6
             pygame.draw.polygon(screen, (255, 180, 0), [
                 (self.x - 10, y),
@@ -127,7 +137,6 @@ class Rocket:
         y = cy + math.sin(self.orbit_angle) * self.orbit_radius
 
         pygame.draw.circle(screen, BLUE, CENTER, 60)
-
         pygame.draw.rect(screen, WHITE, (x - 10, y - 10, 20, 20))
 
     def update_orbit(self):
@@ -146,21 +155,39 @@ class Satellite:
     def draw(self):
         x = CENTER[0] + math.cos(self.angle) * self.radius
         y = CENTER[1] + math.sin(self.angle) * self.radius
-
         pygame.draw.rect(screen, YELLOW, (x - 4, y - 4, 8, 8))
 
 
+def trigger_event(rocket, log, t):
+
+    roll = random.randint(0, 1000)
+
+    if roll == 1:
+        rocket.engine_failure = True
+        log.add(f"{format_time(t)} ENGINE FAILURE")
+
+    if roll == 2:
+        rocket.fuel_leak = True
+        log.add(f"{format_time(t)} FUEL LEAK DETECTED")
+
+    if roll == 3:
+        rocket.engine_failure = False
+        rocket.fuel_leak = False
+        log.add(f"{format_time(t)} SYSTEMS STABILIZED")
+
+
 rocket = Rocket()
-satellites = []
 log = MissionLog()
+satellites = []
 
 mode = "launch"
 t = 0
 
-log.add("T+00:00 Launch Ready")
+log.add("T+00:00 Mission Start")
 
 running = True
 while running:
+
     dt = clock.tick(60) / 1000
     t += dt
 
@@ -178,21 +205,20 @@ while running:
                 if rocket.altitude > 80000:
                     mode = "orbit"
                     rocket.enter_orbit()
-                    log.add(f"{format_time(t)} Orbit Mode Activated")
+                    log.add(f"{format_time(t)} Orbit Mode")
 
             if e.key == pygame.K_d and mode == "orbit":
                 satellites.append(Satellite())
                 log.add(f"{format_time(t)} Satellite Deployed")
 
-    if mode == "launch":
-        rocket.update_launch()
+    trigger_event(rocket, log, t)
 
-        if rocket.altitude > 100 and rocket.engine:
-            log.add(f"{format_time(t)} Liftoff")
+    if mode == "launch":
+
+        rocket.update_launch()
 
         screen.fill(sky_color(rocket.altitude))
         pygame.draw.rect(screen, BLUE, (0, HEIGHT - 80, WIDTH, 80))
-
         rocket.draw_launch()
 
         panel = pygame.Rect(20, 20, 420, 360)
@@ -201,10 +227,11 @@ while running:
 
         stats = [
             f"MODE: LAUNCH",
-            f"ALT: {rocket.altitude:.0f} m",
+            f"ALT: {rocket.altitude:.0f}",
             f"VEL: {rocket.velocity:.1f}",
             f"FUEL: {rocket.fuel:.1f}%",
-            f"ENGINE: {rocket.engine}"
+            f"ENGINE: {'FAIL' if rocket.engine_failure else 'OK'}",
+            f"LEAK: {'YES' if rocket.fuel_leak else 'NO'}"
         ]
 
         y = 60
@@ -212,10 +239,8 @@ while running:
             screen.blit(font_small.render(s, True, WHITE), (30, y))
             y += 28
 
-        hint = font_small.render("SPACE toggle engine", True, GREEN)
-        screen.blit(hint, (20, HEIGHT - 30))
-
     else:
+
         screen.fill((5, 5, 15))
 
         pygame.draw.circle(screen, BLUE, CENTER, 60)
@@ -234,16 +259,14 @@ while running:
         stats = [
             f"MODE: ORBIT",
             f"SATELLITES: {len(satellites)}",
-            f"ORBIT ANGLE: {rocket.orbit_angle:.2f}"
+            f"ENGINE STATUS: {'FAIL' if rocket.engine_failure else 'OK'}",
+            f"FUEL STATUS: {'LEAK' if rocket.fuel_leak else 'STABLE'}"
         ]
 
         y = 60
         for s in stats:
             screen.blit(font_small.render(s, True, WHITE), (30, y))
             y += 28
-
-        hint = font_small.render("D deploy satellite | M orbit mode", True, GREEN)
-        screen.blit(hint, (20, HEIGHT - 30))
 
     log.draw()
 
